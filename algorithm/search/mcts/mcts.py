@@ -5,7 +5,7 @@ pi = planner.search(board, temperature=1.0, add_noise=True)
 action = rng.choice(board.row * board.col, p=pi)
 obs, terminated, info = board.step(int(action))
 
-search 返回完整动作分布供采样和训练；plan 返回评估用贪心动作。
+search 返回完整动作分布供采样和训练;plan 返回评估用贪心动作。
 搜索只在 clone 上落子，不修改真实棋盘，也不更新网络参数。
 """
 
