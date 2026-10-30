@@ -1,0 +1,28 @@
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local environments
+.conda/
+.venv/
+venv/
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Training outputs
+runs/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# Operating system files
+.DS_Store
+Thumbs.db
