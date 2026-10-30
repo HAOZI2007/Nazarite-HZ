@@ -1,6 +1,4 @@
 """项目根目录：python -m unittest tools.test.test_collector -v"""
-import importlib.util
-from pathlib import Path
 import unittest
 
 import numpy as np
@@ -8,6 +6,7 @@ import torch
 
 from algorithm.data_collect.data_collector.collector import Collector, collector
 from algorithm.search.mcts.mcts import MCTSPlanner
+from algorithm.networks.LeNet.model import LeNet
 from scene.board import Chessboard, GameStatus
 
 
@@ -122,12 +121,8 @@ class CollectorTests(unittest.TestCase):
             Collector(object(), Chessboard(2, 3), planner)
 
     def test_real_network_and_mcts_integration(self):
-        path = Path(__file__).resolve().parents[2] / 'algorithm/networks/LeNet-5/model.py'
-        spec = importlib.util.spec_from_file_location('collector_test_lenet', path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
         torch.manual_seed(42)
-        model = module.LeNet().train()
+        model = LeNet().train()
         before = {k: v.clone() for k, v in model.state_dict().items()}
         board = Chessboard(5, 5)
         planner = MCTSPlanner(model, simulation_limit=5, seed=42)

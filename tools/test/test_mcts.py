@@ -1,11 +1,10 @@
 """项目根目录运行：python -m unittest tools.test.test_mcts -v"""
-import importlib.util
-from pathlib import Path
 import unittest
 import numpy as np
 import torch
 from torch import nn
 from algorithm.search.mcts.mcts import MCTSNode, MCTSPlanner
+from algorithm.networks.LeNet.model import LeNet
 from scene.board import Chessboard
 
 
@@ -120,12 +119,8 @@ class MCTSTests(unittest.TestCase):
                 MCTSPlanner(UniformNet(), simulation_limit=bad)
 
     def test_real_model_search_and_full_game(self):
-        path = Path(__file__).resolve().parents[2] / 'algorithm/networks/LeNet-5/model.py'
-        spec = importlib.util.spec_from_file_location('gomoku_lenet', path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
         torch.manual_seed(42)
-        model = module.LeNet().train()
+        model = LeNet().train()
         before = {k: v.clone() for k, v in model.state_dict().items()}
         board = Chessboard(5, 5)
         planner = MCTSPlanner(model, simulation_limit=5, seed=42)

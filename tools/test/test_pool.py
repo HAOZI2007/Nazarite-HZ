@@ -1,6 +1,4 @@
 """项目根目录运行：python -m unittest tools.test.test_pool -v"""
-import importlib.util
-from pathlib import Path
 import unittest
 
 import numpy as np
@@ -10,6 +8,7 @@ from torch.nn import functional as F
 from algorithm.data_collect.sample_pool.pool import ReplayBuffer
 from algorithm.data_collect.data_collector.collector import Collector
 from algorithm.search.mcts.mcts import MCTSPlanner
+from algorithm.networks.LeNet.model import LeNet
 from scene.board import Chessboard
 
 
@@ -106,12 +105,8 @@ class ReplayBufferTests(unittest.TestCase):
         self.assertEqual(a.board_shape, (3, 4))
 
     def test_collector_to_buffer_to_optimizer(self):
-        path = Path(__file__).resolve().parents[2] / 'algorithm/networks/LeNet-5/model.py'
-        spec = importlib.util.spec_from_file_location('pool_test_lenet', path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
         torch.manual_seed(42)
-        model = module.LeNet()
+        model = LeNet()
         board = Chessboard(5, 5)
         planner = MCTSPlanner(model, simulation_limit=5, seed=42)
         samples, info = Collector(model, board, planner, seed=42).collect_sample()
