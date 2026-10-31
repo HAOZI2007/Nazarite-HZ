@@ -18,6 +18,7 @@ venv/
 
 # Training outputs
 runs/
+logs/
 checkpoints/
 *.pt
 *.pth

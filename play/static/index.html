@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>弈间 · 五子棋</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand"><span class="brand-mark">弈</span><span>弈间<small>GOMOKU STUDIO</small></span></a>
+    <span class="local-badge"><i></i> 本地模型 · 人机对弈</span>
+  </header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">YOUR NEXT MOVE</p><h1>落子之间，见招拆招。</h1><p class="subtitle">和自己训练的 AI，下好每一步。</p></div><span class="rule-note">黑棋先行<br>五子相连即胜 · 无禁手</span></section>
+    <div class="workspace">
+      <section class="game-panel">
+        <div class="game-heading"><div class="turn-indicator" id="turnStone"></div><div><h2 id="status">加载模型，开始一局</h2><p id="statusDetail">在右侧选择你的训练断点</p></div><span class="board-size" id="boardSize">— × —</span></div>
+        <div class="board-wrap"><canvas id="board" aria-label="五子棋棋盘，使用方向键移动，回车或空格落子" tabindex="0"></canvas><div id="boardCover" class="board-cover"><span>弈</span><p>棋盘已就绪，等待模型入席</p></div></div>
+        <div class="board-footer"><span><i class="stone black"></i> <span id="blackName">你 · 黑棋</span></span><span class="move-count">第 <b id="moveCount">0</b> 手</span><span><i class="stone white"></i> <span id="whiteName">AI · 白棋</span></span></div>
+        <div class="game-actions"><button id="newGame" class="primary" disabled>↻ &nbsp; 重新开局</button><button id="undo" disabled>↶ &nbsp; 悔棋</button><button id="retry" hidden>重试 AI 落子</button><label class="check"><input type="checkbox" id="showNumbers"> 显示手数</label></div>
+      </section>
+      <aside>
+        <section class="card"><div class="card-heading"><h2>模型席位</h2><span class="tag" id="modelTag">未加载</span></div>
+          <label for="modelSelect">训练断点</label><div class="select-row"><select id="modelSelect"><option value="">正在查找模型…</option></select><button class="icon-button" id="refresh" title="刷新模型列表" aria-label="刷新模型列表">↻</button></div>
+          <details><summary>使用其他模型路径</summary><input id="modelPath" placeholder="例如 logs/任务名/运行目录/latest.pt" aria-label="模型文件路径"><p class="hint">填写本机 .pt 路径；只加载你自己生成的可信训练断点。</p></details>
+          <button id="loadModel" class="primary full">加载模型</button>
+          <div class="model-info" id="modelInfo"><span class="info-dot"></span><p>连接训练成果，让 AI 入席。</p></div>
+        </section>
+        <section class="card"><h2>对局设置</h2><label>你的执子</label><div class="side-switch"><button id="playBlack" class="selected" aria-pressed="true"><i class="stone black"></i>执黑先行</button><button id="playWhite" aria-pressed="false"><i class="stone white"></i>执白后行</button></div>
+          <label for="simulations" class="range-label">每步搜索次数 <output id="simulationValue">100</output></label><input type="range" id="simulations" min="20" max="1000" step="20" value="100"><div class="range-scale"><span>快速落子</span><span>深入思考</span></div><p class="hint">搜索越多，思考时间越长。执子切换将在新一局生效。</p>
+        </section>
+        <section class="card record-card"><div class="card-heading"><h2>棋谱</h2><span id="thinkTime" class="muted">等待落子</span></div><ol id="history" class="history"><li class="empty-record">每一步，都从这里开始。</li></ol></section>
+      </aside>
+    </div>
+    <div id="message" role="status" aria-live="polite" hidden></div>
+    <footer>NAZARITE <span>·</span> 策略价值网络 + MCTS <span>·</span> 每一步来自你的模型</footer>
+  </main>
+</body>
+</html>

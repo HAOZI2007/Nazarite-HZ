@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nazarite-gomoku"
+version = "0.1.0"
+description = "MCTS self-play policy-value training for Gomoku"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26,<3", "torch>=2.6,<3", "torchinfo>=1.8,<2"]
+
+[project.scripts]
+train = "train_manager.scripts.train:main"
+play = "play.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["train_manager*", "algorithm*", "scene*", "play*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+play = ["static/*.html", "static/*.css", "static/*.js"]

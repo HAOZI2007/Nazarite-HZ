@@ -1,7 +1,15 @@
-import math
+from copy import deepcopy
+from dataclasses import asdict
+from datetime import datetime
+import json
+from pathlib import Path
+import random
+from uuid import uuid4
 import time
 
 import torch
+
+from train_manager.checkpoint import save_checkpoint, load_checkpoint
 
 from scene.board import Chessboard
 from algorithm.search.mcts.mcts import MCTSPlanner
@@ -9,14 +17,20 @@ from algorithm.data_collect.data_collector.collector import Collector
 from algorithm.data_collect.sample_pool.pool import ReplayBuffer
 from algorithm.training.trainer import PolicyValueTrainer
 
-class Training_Manager:
-    def __init__(self,config,model_factory):
-        self.config = config
+class TrainManager:
+    def __init__(self, config, model_factory, *, task_id="custom"):
+        self.task_id = task_id
+        self.run_dir = None
+        self._at_boundary = True
+        self.config = deepcopy(config)
+        config = self.config
         self._validate_config()
 
+        random.seed(config.seed)
         torch.manual_seed(config.seed)
 
-        self.device = torch.device(config.device)
+        device = ("cuda" if torch.cuda.is_available() else "cpu") if config.device == "auto" else config.device
+        self.device = torch.device(device)
         # 先移动模型，再创建优化器。
         self.model = model_factory().to(self.device)
 
@@ -45,7 +59,7 @@ class Training_Manager:
             capacity=config.capacity,
             seed=config.seed,
         )
-        #穿境模型训练类（反向传播）
+        #创建模型训练类（反向传播）
         self.trainer = PolicyValueTrainer(
             model=self.model,
             learning_rate=config.learning_rate,
@@ -59,58 +73,7 @@ class Training_Manager:
         self.total_updates = 0
 
     def _validate_config(self):
-        cfg = self.config
-
-        positive_integer_fields = (
-            "rows",
-            "cols",
-            "simulations",
-            "capacity",
-            "min_samples",
-            "batch_size",
-            "iterations",
-            "games_per_iteration",
-            "updates_per_iteration",
-        )
-
-        for name in positive_integer_fields:
-            value = getattr(cfg, name)
-
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or value <= 0
-            ):
-                raise ValueError(f"{name} 必须为正整数")
-
-        if not (
-            cfg.capacity >= cfg.min_samples >= cfg.batch_size
-        ):
-            raise ValueError(
-                "必须满足 capacity >= min_samples >= batch_size"
-            )
-
-        if (
-            not math.isfinite(cfg.learning_rate)
-            or cfg.learning_rate <= 0
-        ):
-            raise ValueError("learning_rate 必须为有限正数")
-
-        for name in ("weight_decay", "value_weight", "temperature"):
-            value = getattr(cfg, name)
-
-            if not math.isfinite(value) or value < 0:
-                raise ValueError(f"{name} 必须为有限非负数")
-
-        if not isinstance(cfg.add_noise, bool):
-            raise ValueError("add_noise 必须为布尔值")
-
-        if (
-            isinstance(cfg.seed, bool)
-            or not isinstance(cfg.seed, int)
-            or cfg.seed < 0
-        ):
-            raise ValueError("seed 必须为非负整数")
+        self.config.validate()
 
     def collect_games(self):
         cfg = self.config
@@ -195,6 +158,7 @@ class Training_Manager:
 
     def run(self):
         cfg = self.config
+        self._prepare_run_dir()
 
         print(
             f"开始训练：棋盘={cfg.rows}x{cfg.cols},"
@@ -206,11 +170,21 @@ class Training_Manager:
             self.completed_iterations,
             cfg.iterations,
         ):
+            self._at_boundary = False
             collection = self.collect_games()
             training = self.train_batches()
 
             # 只有采集与更新阶段都成功结束，才记为完成一轮。
             self.completed_iterations = iteration + 1
+            self._at_boundary = True
+            record = {"iteration": self.completed_iterations,
+                      "total_games": self.total_games, "total_samples": self.total_samples,
+                      "total_updates": self.total_updates, "buffer_size": len(self.buffer),
+                      "collection": collection, "training": training}
+            with (self.run_dir / "metrics.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
+            if self.completed_iterations % cfg.save_interval == 0:
+                self.save(self.run_dir / "latest.pt")
 
             if training["updates"] == 0:
                 loss_text = (
@@ -235,3 +209,80 @@ class Training_Manager:
                 f"{collection['draws']} | "
                 f"{loss_text}"
             )
+
+        self.save(self.run_dir / "latest.pt")
+        print(f"训练完成，断点：{self.run_dir / 'latest.pt'}")
+        return self.run_dir
+
+    def _prepare_run_dir(self):
+        if self.run_dir is not None:
+            return
+        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        safe_task = ''.join(c if c.isalnum() or c in '-_' else '_' for c in self.task_id)
+        self.run_dir = Path(self.config.output_dir) / safe_task / f'{stamp}-{uuid4().hex[:8]}'
+        self.run_dir.mkdir(parents=True, exist_ok=False)
+        metadata = {'task_id': self.task_id, 'resolved_device': str(self.device),
+                    'config': asdict(self.config)}
+        (self.run_dir / 'config.json').write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    def save(self, path):
+        """仅在完整轮次边界保存，避免将半轮进度错误标成已完成。"""
+        if not self._at_boundary:
+            raise RuntimeError('只允许在完整轮次边界保存断点')
+        save_checkpoint(path, {
+            'task_id': self.task_id,
+            'model_class': f'{type(self.model).__module__}.{type(self.model).__qualname__}',
+            'config': asdict(self.config),
+            'model': self.model.state_dict(),
+            'optimizer': self.trainer.optimizer.state_dict(),
+            'counters': {name: getattr(self, name) for name in
+                         ('completed_iterations', 'total_games', 'total_samples', 'total_updates')},
+            'buffer': self.buffer.state_dict(),
+            'rng': {'torch': torch.get_rng_state(),
+                    'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+                    'python': random.getstate(),
+                    'planner': deepcopy(self.planner.rng.bit_generator.state),
+                    'collector': deepcopy(self.collector.rng.bit_generator.state)},
+        })
+
+    def restore(self, path):
+        """在新建 Manager 上恢复，允许修改设备、输出目录和目标总轮数。"""
+        if self.total_games or self.completed_iterations or self.run_dir is not None:
+            raise RuntimeError('请在新的 Manager 上恢复断点')
+        data = load_checkpoint(path)
+        if data['task_id'] != self.task_id:
+            raise ValueError('断点任务名与当前任务不同')
+        model_class = f'{type(self.model).__module__}.{type(self.model).__qualname__}'
+        if data['model_class'] != model_class:
+            raise ValueError('断点模型类与当前模型不一致')
+        current = asdict(self.config)
+        allowed = {'iterations', 'output_dir', 'device', 'save_interval'}
+        for name, value in current.items():
+            if name not in allowed and data['config'].get(name) != value:
+                raise ValueError(f'续训配置不一致：{name}')
+        counters = data['counters']
+        for name in ('completed_iterations', 'total_games', 'total_samples', 'total_updates'):
+            if type(counters.get(name)) is not int or counters[name] < 0:
+                raise ValueError(f'非法训练计数：{name}')
+        if self.config.iterations < counters['completed_iterations']:
+            raise ValueError('目标总轮数小于断点已完成轮数')
+        self.buffer.load_state_dict(data['buffer'])
+        if self.buffer.board_shape not in (None, (self.config.rows, self.config.cols)):
+            raise ValueError('断点经验池棋盘尺寸不匹配')
+        self.model.load_state_dict(data['model'])
+        self.trainer.optimizer.load_state_dict(data['optimizer'])
+        for name, value in counters.items():
+            setattr(self, name, value)
+        self.planner.rng.bit_generator.state = data['rng']['planner']
+        self.collector.rng.bit_generator.state = data['rng']['collector']
+        random.setstate(data['rng']['python'])
+        torch.set_rng_state(data['rng']['torch'])
+        cuda_states = data['rng']['cuda']
+        if self.device.type == 'cuda' and len(cuda_states) == torch.cuda.device_count():
+            torch.cuda.set_rng_state_all(cuda_states)
+        print(f'恢复断点：已完成 {self.completed_iterations} 轮，池内 {len(self.buffer)} 条')
+
+
+# 兼容早期类名。
+Training_Manager = TrainManager

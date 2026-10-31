@@ -9,6 +9,7 @@ states, policies, outcomes = buffer.sample(32, device='cpu')
 """
 
 from collections import deque
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -118,3 +119,28 @@ class ReplayBuffer:
         """清空样本与棋盘尺寸约定；不重置随机数生成器。"""
         self._samples.clear()
         self._board_shape = None
+
+    def state_dict(self):
+        """独立的 CPU 快照，包含抽样随机数状态。"""
+        return {'capacity': self.capacity,
+                'samples': [(s.copy(), p.copy(), z) for s, p, z in self._samples],
+                'rng_state': deepcopy(self.rng.bit_generator.state)}
+
+    def load_state_dict(self, state):
+        """先验证临时池，失败时不改变当前池。"""
+        if state['capacity'] != self.capacity:
+            raise ValueError('断点经验池容量与配置不一致')
+        if len(state['samples']) > self.capacity:
+            raise ValueError('断点样本数超过经验池容量')
+        temporary = ReplayBuffer(self.capacity)
+        for sample in state['samples']:
+            validated = temporary._validate_sample(sample, temporary._board_shape)
+            # 快照已经归一化；再次归一化可能改变浮点尾数，影响续训复现。
+            if sample[0].dtype != np.float32 or sample[1].dtype != np.float32:
+                raise ValueError('断点样本必须为 float32 数组')
+            temporary._samples.append((validated[0], sample[1].copy(), validated[2]))
+            temporary._board_shape = validated[0].shape[1:]
+        temporary.rng.bit_generator.state = deepcopy(state['rng_state'])
+        self._samples = temporary._samples
+        self._board_shape = temporary._board_shape
+        self.rng = temporary.rng
